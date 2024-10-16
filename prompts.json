@@ -1,0 +1,5 @@
+{
+  "Internal Data": "Input Medical Note:\n{}\n\nCreate a bulleted list of which medications are mentioned and whether they are active, discontinued. This dataset will only be evaluated on the following medications: 'prochlorperazine', 'compazine', 'navane', 'fluphenazine', 'haldol', 'haloperidol', 'pimozide', 'STELAZINE', 'THORAZINE', 'prolixin', 'perphenazine', 'sertraline', 'memantine', 'chlorproMAZINE', 'loxapine'.\n\nExpected Output Format:\n- Current Medications (Active): Medication_1, Medication_2\n- Discontinued Medications: Medication_3, Medication_4\nEND\n\nOutput:\n",
+  
+  "Other": "Input Medical Note:\n{}\n\nCreate a bulleted list of which medications are mentioned and whether they are active, discontinued, or neither.\n\nExpected Output Format:\n- Current Medications (Active): Medication_1, Medication_2\n- Discontinued Medications: Medication_3, Medication_4\n- Other Mentioned Medications (neither active nor discontinued): Medication_5, Medication_6\nEND\n\nOutput:\n"
+}
