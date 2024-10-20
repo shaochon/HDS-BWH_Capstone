@@ -4,6 +4,10 @@ from tqdm import tqdm
 from vllm import LLM, SamplingParams
 from baseline import *
 import sys
+import os
+import json
+import pandas as pd
+import argparse
 
 def get_visible_gpus():
     """
@@ -113,14 +117,14 @@ def generate_llm_responses(input_df, batch_size, llm, prompt_template, max_token
 
 
 # 3. Update run_pipeline to use LLMEngine and align with the original logic
-def run_llm_pipeline(model_path, input_df, prompt_template, dataset_name, batch_size=16, max_token_output=80, use_sampling=True):
+def run_llm_pipeline(llm_model, input_df, prompt_template, dataset_name, batch_size=16, max_token_output=80, use_sampling=True):
     """
     Main function to run the text generation pipeline using LLMEngine and compute metrics.
     
     Parameters:
     ----------
-    model_path : str
-        The path of the model to be used.
+    llm_model : str
+        The initilized llm model.
     input_df : pd.DataFrame
         The data to be inferred.
     prompt_template : str
@@ -139,11 +143,8 @@ def run_llm_pipeline(model_path, input_df, prompt_template, dataset_name, batch_
     result_df : pd.DataFrame
         DataFrame with the processed outputs and calculated metrics.
     """
-    # Initialize the model with LLMEngine
-    llm_engine = initialize_llm_model(model_path)
-
     # Generate responses
-    response_list = generate_llm_responses(input_df, batch_size, llm_engine, prompt_template, max_token_output, use_sampling)
+    response_list = generate_llm_responses(input_df, batch_size, llm_model, prompt_template, max_token_output, use_sampling)
 
     # Process the responses to categorize medications
     df_w_classifications = process_output(input_df, response_list, dataset_name)  # Pass dataset_name to keep logic consistent
@@ -163,7 +164,8 @@ def clear_cuda_memory_and_terminate(generator=None):
     torch.cuda.empty_cache()
     gc.collect()
 
-def benchmark_llm_model(name_dataset, model_path, prompt_template, input_df, data_folder, result_df_path, batch_size=16, max_token_output=80, use_sampling=True):
+
+def benchmark_llm_model(name_dataset, model_path, prompt_templates, input_df, data_folder, result_df_path, batch_size=16, max_token_output=80, use_sampling=False, one_shot=False, cot=False):
     """
     Function to run the entire LLMEngine pipeline and compute average row-wise metrics for a specific model and dataset.
 
@@ -173,60 +175,74 @@ def benchmark_llm_model(name_dataset, model_path, prompt_template, input_df, dat
         The name of the dataset being processed (e.g., "Internal Data" or "MIT").
     model_path : str
         The path of the model to be used.
-    prompt_template : str
-        Template for constructing the prompts.
+    prompt_templates : list of str
+        List of templates for constructing the prompts.
     input_df : pd.DataFrame
         Data to run inference on.
     data_folder : str
         The folder where input data and results are stored.
     result_df_path : str
         Path to the CSV file where results will be stored.
-    num_gpus : int
-        Number of GPUs to use for LLMEngine.
     batch_size : int
         Number of examples per batch.
     max_token_output : int
         Maximum number of tokens to generate.
+    one_shot : bool
+        Whether the current run is a one-shot test.
     """
     model_name = model_path.split('/')[-1]
     
-    # Run the LLMEngine pipeline with dynamic GPU count
-    df_w_classifications, extraction_precision, \
-    extraction_recall, extraction_f1, conditional_accuracy, \
-    conditional_macro_f1, conditional_macro_precision, \
-        conditional_macro_recall = run_llm_pipeline(model_path=model_path, 
-                                              input_df=input_df, 
-                                              prompt_template=prompt_template, 
-                                              dataset_name=name_dataset,
-                                              batch_size=batch_size, 
-                                              max_token_output=max_token_output,
-                                              use_sampling=use_sampling)
+    # Initialize the model with LLMEngine
+    llm_engine = initialize_llm_model(model_path)
+    
+    # Iterate over each prompt template
+    for i, prompt_template in enumerate(prompt_templates):
+        print(f"Running with prompt template {i+1}/{len(prompt_templates)}")
+        
+        # Run the LLMEngine pipeline with dynamic GPU count
+        df_w_classifications, extraction_precision, \
+        extraction_recall, extraction_f1, conditional_accuracy, \
+        conditional_macro_f1, conditional_macro_precision, \
+        conditional_macro_recall = run_llm_pipeline(
+            llm_model=llm_engine, 
+            input_df=input_df, 
+            prompt_template=prompt_template, 
+            dataset_name=name_dataset,
+            batch_size=batch_size, 
+            max_token_output=max_token_output,
+            use_sampling=use_sampling
+        )
 
-    # Save the row metrics DataFrame to a CSV
-    df_w_classifications.to_csv(data_folder + f'base_pred_data/{name_dataset}_{model_name}.csv', index=False)
+        # Save the row metrics DataFrame to a CSV
+        if cot and one_shot:
+            output_filename = f'{name_dataset}_{model_name}_cot_1_shot_{i+1}_cot.csv'
+        elif cot:
+            output_filename = f'{name_dataset}_{model_name}_cot.csv'
+        elif one_shot:
+            output_filename = f'{name_dataset}_{model_name}_1_shot_{i+1}.csv'
+        df_w_classifications.to_csv(data_folder + f'base_pred_data/{output_filename}', index=False)
 
-    # Read the results CSV
-    result_df = pd.read_csv(result_df_path)
+        # Read the results CSV
+        result_df = pd.read_csv(result_df_path)
 
-    # Define your result row
-    new_row = {
-        'Dataset': name_dataset,
-        'Model': model_name,
-        'Prompt': prompt_template,
-        'extraction_precision': extraction_precision,
-        'extraction_recall': extraction_recall,
-        'extraction_f1': extraction_f1,
-        'conditional_accuracy': conditional_accuracy,
-        'conditional_macro_f1': conditional_macro_f1,
-        'conditional_macro_precision': conditional_macro_precision,
-        'conditional_macro_recall': conditional_macro_recall
-    }
+        # Define your result row
+        new_row = {
+            'Dataset': name_dataset,
+            'Model': model_name,
+            'Prompt': prompt_template,
+            'extraction_precision': extraction_precision,
+            'extraction_recall': extraction_recall,
+            'extraction_f1': extraction_f1,
+            'conditional_accuracy': conditional_accuracy,
+            'conditional_macro_f1': conditional_macro_f1,
+            'conditional_macro_precision': conditional_macro_precision,
+            'conditional_macro_recall': conditional_macro_recall
+        }
 
-    # Append the new row to the results DataFrame and save
-    result_df = result_df._append(new_row, ignore_index=True).round(3)
-    result_df.to_csv(result_df_path, index=False)
-    print(f"Results for {model_name} on {name_dataset} saved successfully.")
-
+        # Append the new row to the results DataFrame and save
+        result_df = result_df._append(new_row, ignore_index=True).round(3)
+        result_df.to_csv(result_df_path, index=False)
+        print(f"Results for {model_name} on {name_dataset} with prompt {i+1} saved successfully.")
 
 
 # Function to parse command-line arguments
@@ -242,6 +258,8 @@ def parse_arguments():
     parser.add_argument('--result_df_path', type=str, required=True, help="Path to the CSV file where results will be stored.")
     parser.add_argument('--batch_size', type=int, default=16, help="Batch size for inference.")
     parser.add_argument('--max_token_output', type=int, default=80, help="Maximum number of tokens to generate.")
+    parser.add_argument('--one_shot', type=str, required=True, help="Whether to perform one-shot inference.")
+    parser.add_argument('--cot', type=str, required=True, help="Whether to perform one-shot inference.")
     
     return parser.parse_args()
 
@@ -252,30 +270,37 @@ if __name__ == "__main__":
     # Load the test dataframe
     test_df = pd.read_csv(os.path.join(args.data_folder, args.test_df_name))
 
-
-    
     try:
         with open('prompts.json', 'r') as file:
-            prompt_template = json.load(file)
-        prompt_template = prompt_template[args.prompt_template_key]
-        print(f'prompt_template: {prompt_template}')
-    except KeyError:
-        print(f"Key '{args.prompt_template_key}' not found in the prompt template JSON file.")
-        sys.exit(1)
+            prompt_templates_json = json.load(file)
 
-    
+        prompt_template_keys = [args.prompt_template_key]
+        if args.one_shot == 'true' and args.cot == 'true':
+            prompt_template_keys = [f"{args.prompt_template_key}_1_shot_{i+1}_CoT" for i in range(5)]
+        elif args.cot == 'true':
+            prompt_template_keys = [f"{args.prompt_template_key}_CoT"]
+        elif args.one_shot == 'true':
+            prompt_template_keys = [f"{args.prompt_template_key}_1_shot_{i+1}" for i in range(5)]
+
+        prompt_templates = [prompt_templates_json[key] for key in prompt_template_keys]
+        print(f'Loaded prompt key {prompt_template_keys} for inference.')
+    except KeyError as e:
+        print(f"Key error occurred: {e}")
+        sys.exit(1)
 
     # Run the benchmark using your defined function
     benchmark_llm_model(
         name_dataset=args.dataset_name,
         model_path=args.model_path,
-        prompt_template=prompt_template,
+        prompt_templates=prompt_templates,
         input_df=test_df,
         data_folder=args.data_folder,
         result_df_path=args.result_df_path,
         batch_size=args.batch_size,
         max_token_output=args.max_token_output,
-        use_sampling=False
+        use_sampling=False,
+        one_shot=True if args.one_shot == 'true' else False,
+        cot=True if args.cot == 'true' else False
     )
 
     torch.cuda.empty_cache()

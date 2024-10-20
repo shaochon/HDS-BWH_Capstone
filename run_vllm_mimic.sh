@@ -1,12 +1,15 @@
 #!/bin/bash
 
 # Ensure that only the specified GPUs are available for the jobs
-export CUDA_VISIBLE_DEVICES=0,1,2,3
+export CUDA_VISIBLE_DEVICES=4,5,6,7
 
 # Data folder path and result file path
 data_folder="/PHShome/cs1839/capstone_data/"
 results_df_path="${data_folder}results.csv"
 test_df_name="mimic_iv_snippets_list.csv"  # Adjust this depending on your actual test file
+one_shot=true
+cot=true
+
 
 # Load the appropriate test dataframe
 input_df="${data_folder}${test_df_name}"
@@ -42,14 +45,13 @@ elif [[ "$test_df_name" == "mimic_iv_snippets_list.csv" ]]; then
     prompt_template_key="Other" 
 fi
 
-
 # Iterate over each model and run them one after another
 for model_name in "${!name_model_paths[@]}"; do
     model_path="${name_model_paths[$model_name]}"
 
-    echo "Running benchmark for model: ${model_name}"
+    echo "Using prompt template key: ${prompt_template_key}"
 
-    # Run the Python script for each model
+    # Run the Python script for each model and prompt template
     python vllm_inference.py \
         --model_path "$model_path" \
         --test_df_name "$test_df_name" \
@@ -57,8 +59,10 @@ for model_name in "${!name_model_paths[@]}"; do
         --dataset_name "$dataset_name" \
         --data_folder "$data_folder" \
         --result_df_path "$results_df_path" \
+        --one_shot "$one_shot" \
+        --cot "$cot" \
         --batch_size 200 \
-        --max_token_output 80
+        --max_token_output 200 \
 
     # Clear the CUDA cache to free up GPU memory
     echo "Clearing GPU memory after running model: ${model_name}"
@@ -68,6 +72,8 @@ for model_name in "${!name_model_paths[@]}"; do
     sleep 2
     python -c "import gc; gc.collect()"
 
+
 done
+
 
 echo "All jobs completed."
