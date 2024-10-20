@@ -50,7 +50,7 @@ def initialize_llm_model(model_path, use_fp16=True, gpu_memory_utilization=0.9):
         model=model_path, 
         tensor_parallel_size=num_gpus, 
         dtype=dtype,
-        max_model_len=4096,  
+        max_model_len=4096 if 'meditron-7b' not in model_path else None,  
         gpu_memory_utilization=gpu_memory_utilization
     )
     
@@ -149,10 +149,11 @@ def run_llm_pipeline(model_path, input_df, prompt_template, dataset_name, batch_
     df_w_classifications = process_output(input_df, response_list, dataset_name)  # Pass dataset_name to keep logic consistent
 
     # Calculate row-level metrics
-    df_w_metrics = calculate_row_metrics(df_w_classifications, dataset_name)  # Pass dataset_name to metrics function
+    extraction_precision, extraction_recall, extraction_f1, conditional_accuracy, conditional_macro_f1, conditional_macro_precision, conditional_macro_recall = calculate_metrics_by_dataset(df_w_classifications, dataset_name)
 
     # Return the final DataFrame with metrics
-    return df_w_metrics
+    return df_w_classifications, extraction_precision, extraction_recall, extraction_f1, conditional_accuracy, conditional_macro_f1, conditional_macro_precision, conditional_macro_recall
+
 
 # 4. Helper function to clear CUDA memory and delete the generator
 def clear_cuda_memory_and_terminate(generator=None):
@@ -190,7 +191,10 @@ def benchmark_llm_model(name_dataset, model_path, prompt_template, input_df, dat
     model_name = model_path.split('/')[-1]
     
     # Run the LLMEngine pipeline with dynamic GPU count
-    df_w_row_metrics = run_llm_pipeline(model_path=model_path, 
+    df_w_classifications, extraction_precision, \
+    extraction_recall, extraction_f1, conditional_accuracy, \
+    conditional_macro_f1, conditional_macro_precision, \
+        conditional_macro_recall = run_llm_pipeline(model_path=model_path, 
                                               input_df=input_df, 
                                               prompt_template=prompt_template, 
                                               dataset_name=name_dataset,
@@ -199,27 +203,23 @@ def benchmark_llm_model(name_dataset, model_path, prompt_template, input_df, dat
                                               use_sampling=use_sampling)
 
     # Save the row metrics DataFrame to a CSV
-    df_w_row_metrics.to_csv(data_folder + f'base_pred_data/{name_dataset}_{model_name}.csv', index=False)
+    df_w_classifications.to_csv(data_folder + f'base_pred_data/{name_dataset}_{model_name}.csv', index=False)
 
     # Read the results CSV
     result_df = pd.read_csv(result_df_path)
-    
-    # Calculate mean metrics
-    metrics_mean = df_w_row_metrics[['extraction_precision', 'extraction_recall', 'conditional_accuracy', 
-                                     'conditional_macro_f1', 'conditional_macro_precision', 
-                                     'conditional_macro_recall']].mean(axis=0)
 
-    # Create a new row with the results
+    # Define your result row
     new_row = {
         'Dataset': name_dataset,
         'Model': model_name,
         'Prompt': prompt_template,
-        'extraction_precision': metrics_mean.get('extraction_precision', np.nan),
-        'extraction_recall': metrics_mean.get('extraction_recall', np.nan),
-        'conditional_accuracy': metrics_mean.get('conditional_accuracy', np.nan),
-        'conditional_macro_f1': metrics_mean.get('conditional_macro_f1', np.nan),
-        'conditional_macro_precision': metrics_mean.get('conditional_macro_precision', np.nan),
-        'conditional_macro_recall': metrics_mean.get('conditional_macro_recall', np.nan)
+        'extraction_precision': extraction_precision,
+        'extraction_recall': extraction_recall,
+        'extraction_f1': extraction_f1,
+        'conditional_accuracy': conditional_accuracy,
+        'conditional_macro_f1': conditional_macro_f1,
+        'conditional_macro_precision': conditional_macro_precision,
+        'conditional_macro_recall': conditional_macro_recall
     }
 
     # Append the new row to the results DataFrame and save

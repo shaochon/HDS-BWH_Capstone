@@ -1,12 +1,12 @@
 #!/bin/bash
 
 # Ensure that only the specified GPUs are available for the jobs
-export CUDA_VISIBLE_DEVICES=0,1,2,3
+export CUDA_VISIBLE_DEVICES=4,5,6,7
 
 # Data folder path and result file path
 data_folder="/PHShome/cs1839/capstone_data/"
 results_df_path="${data_folder}results.csv"
-test_df_name="mimic_iv_snippets_list.csv"  # Adjust this depending on your actual test file
+test_df_name="PPV_snippet_medications.csv"  # Adjust this depending on your actual test file
 
 # Load the appropriate test dataframe
 input_df="${data_folder}${test_df_name}"

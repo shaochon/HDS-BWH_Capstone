@@ -194,102 +194,77 @@ def process_output(input_df, response_list, dataset_name):
     return result_df
 
 # 4. Function to calculate metrics (Precision, Recall, F1, Accuracy)
-def calculate_row_metrics(df, dataset_name):
-    """
-    Calculate row-wise metrics, excluding `neither_medications` for "Internal Data".
-    
-    Parameters:
-    ----------
-    df : pd.DataFrame
-        The DataFrame containing true and predicted medication categories.
-    
-    dataset_name : str
-        Name of the dataset being processed. For "Internal Data", `neither_medications` will be excluded.
-    
-    Returns:
-    -------
-    pd.DataFrame
-        The DataFrame updated with calculated metrics.
-    """
-    # Initialize columns to store row-wise metrics
-    df.loc[:, 'extraction_precision'] = np.nan
-    df.loc[:, 'extraction_recall'] = np.nan
-    df.loc[:, 'conditional_accuracy'] = np.nan
-    df.loc[:, 'conditional_macro_f1'] = np.nan
-    df.loc[:, 'conditional_macro_precision'] = np.nan
-    df.loc[:, 'conditional_macro_recall'] = np.nan
+def calculate_metrics_by_dataset(df, dataset_name):
+    # Combine true and predicted sets
+    if dataset_name == 'Internal Data':
+        df['true_set'] = df[['active_medications', 'discontinued_medications']].apply(lambda x: [med for meds in x for med in meds], axis=1)
+        df['pred_set'] = df[['active_medications_pred', 'discontinued_medications_pred']].apply(lambda x: [med for meds in x for med in meds], axis=1)
+    else:
+        df['true_set'] = df[['active_medications', 'discontinued_medications', 'neither_medications']].apply(lambda x: [med for meds in x for med in meds], axis=1)
+        df['pred_set'] = df[['active_medications_pred', 'discontinued_medications_pred', 'neither_medications_pred']].apply(lambda x: [med for meds in x for med in meds], axis=1)
 
-    # Helper function to compute F1, precision, and recall
-    def compute_conditional_metrics(true_set, pred_set):
-        tp = len(true_set.intersection(pred_set))
-        precision = tp / len(pred_set) if len(pred_set) > 0 else 0
-        recall = tp / len(true_set) if len(true_set) > 0 else 0
-        f1 = (2 * precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
-        return f1, precision, recall
+    # Calculate intersection of true and predicted sets
+    df['intersection'] = df.apply(lambda row: set(row['pred_set']).intersection(set(row['true_set'])), axis=1)
 
-    for index, row in df.iterrows():
-        # Combine predictions and true sets based on dataset
-        if dataset_name == "Internal Data":
-            pred_set = set(row['active_medications_pred'] + row['discontinued_medications_pred'])
-            true_set = set(row['active_medications'] + row['discontinued_medications'])
-        else:
-            pred_set = set(row['active_medications_pred'] + row['discontinued_medications_pred'] + row['neither_medications_pred'])
-            true_set = set(row['active_medications'] + row['discontinued_medications'] + row['neither_medications'])
+    # Calculate true_count, pred_count, intersection_count
+    df['true_count'] = df['true_set'].apply(lambda x: len(x))
+    df['pred_count'] = df['pred_set'].apply(lambda x: len(x))
+    df['intersection_count'] = df['intersection'].apply(lambda x: len(x))
 
-        intersection = pred_set.intersection(true_set)
+    # Summing over the columns to calculate a micro precision and recall
+    true_count = df['true_count'].sum()
+    pred_count = df['pred_count'].sum()
+    intersection_count = df['intersection_count'].sum()
 
-        # Compute precision and recall for extraction
-        precision = len(intersection) / len(pred_set) if len(pred_set) != 0 else 0
-        recall = len(intersection) / len(true_set) if len(true_set) != 0 else 0
+    # Calculate extraction precision, recall, and f1
+    extraction_precision = intersection_count / pred_count if pred_count > 0 else 0
+    extraction_recall = intersection_count / true_count if true_count > 0 else 0
+    extraction_f1 = 2 * extraction_precision * extraction_recall / (extraction_precision + extraction_recall) if (extraction_precision + extraction_recall) > 0 else 0
 
-        df.loc[index, 'extraction_precision'] = precision
-        df.loc[index, 'extraction_recall'] = recall
-
-        # Compute conditional metrics based on true and predicted sets
-        correctly_extracted_active = set(row['active_medications']).intersection(intersection)
-        correctly_extracted_active_pred = set(row['active_medications_pred']).intersection(intersection)
-        # get the intersection of correctly extracted active medications and active medications predicted count
-        active_acc_count = correctly_extracted_active.intersection(correctly_extracted_active_pred)
-
-        correctly_extracted_discontinued = set(row['discontinued_medications']).intersection(intersection)
-        correctly_extracted_discontinued_pred = set(row['discontinued_medications_pred']).intersection(intersection)
-        discontinued_acc_count = correctly_extracted_discontinued_pred.intersection(correctly_extracted_discontinued)
+    # Task 2 metric calculation function
+    def calculate_task2_metrics(df, med_class):
+        # Define columns dynamically based on the class
+        true_col = f'{med_class}_medications'
+        pred_col = f'{med_class}_medications_pred'
+        pred_task2_col = f'{med_class}_medications_pred_task2'
+        task2_pred_count_col = f'task2_{med_class}_pred_count'
+        task2_true_count_col = f'task2_{med_class}_true_count'
+        task2_intersection_count_col = f'task2_{med_class}_intersection_count'
         
-        # Keep your original logic for neither_medications
-        if dataset_name != "Internal Data":
-            correctly_extracted_neither = set(row['neither_medications']).intersection(intersection)
-            correctly_extracted_neither_pred = set(row['neither_medications_pred']).intersection(intersection)
-            neither_acc_count = correctly_extracted_neither.intersection(correctly_extracted_neither_pred)
-        else:
-            correctly_extracted_neither = set()
+        # Calculate intersection for task 2
+        df[pred_task2_col] = df.apply(lambda row: [med for med in row[pred_col] if med in row['intersection']], axis=1)
+        
+        # Calculate counts for task 2 precision and recall
+        df[task2_pred_count_col] = df[pred_task2_col].apply(lambda x: len(x))
+        df[task2_true_count_col] = df[true_col].apply(lambda x: len(x))
+        df[task2_intersection_count_col] = df.apply(lambda row: len(set(row[true_col]).intersection(set(row[pred_task2_col]))), axis=1)
+        
+        # Calculate precision, recall, and F1 for the given class
+        precision = df[task2_intersection_count_col].sum() / df[task2_pred_count_col].sum() if df[task2_pred_count_col].sum() > 0 else 0
+        recall = df[task2_intersection_count_col].sum() / df[task2_true_count_col].sum() if df['true_count'].sum() > 0 else 0
+        f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
+        
+        return df, precision, recall, f1
 
-        active_f1, active_precision, active_recall = compute_conditional_metrics(correctly_extracted_active, correctly_extracted_active_pred)
-        discontinued_f1, discontinued_precision, discontinued_recall = compute_conditional_metrics(correctly_extracted_discontinued, correctly_extracted_discontinued_pred)
-        if dataset_name != "Internal Data":
-            neither_f1, neither_precision, neither_recall = compute_conditional_metrics(correctly_extracted_neither, correctly_extracted_neither_pred)
-            macro_f1 = (active_f1 + discontinued_f1 + neither_f1) / 3
-            macro_precision = (active_precision + discontinued_precision + neither_precision) / 3
-            macro_recall = (active_recall + discontinued_recall + neither_recall) / 3
-        else:
-            # Exclude neither_medications for Internal Data
-            macro_f1 = (active_f1 + discontinued_f1) / 2
-            macro_precision = (active_precision + discontinued_precision) / 2
-            macro_recall = (active_recall + discontinued_recall) / 2
+    # Apply task2 metrics calculation for each medication class
+    df, active_precision, active_recall, active_f1 = calculate_task2_metrics(df, 'active')
+    df, discontinued_precision, discontinued_recall, discontinued_f1 = calculate_task2_metrics(df, 'discontinued')
 
-        ## Calculate conditional accuracy with original logic
-        correct_preds = len(active_acc_count) + len(discontinued_acc_count)
-        if dataset_name != "Internal Data":
-            correct_preds += len(neither_acc_count)
+    if dataset_name != 'Internal Data':
+        df, neither_precision, neither_recall, neither_f1 = calculate_task2_metrics(df, 'neither')
+    else:
+        neither_precision, neither_recall, neither_f1 = 0, 0, 0
 
-        acc = correct_preds / len(intersection) if len(intersection) > 0 else 0
+    # Add a column to sum the correct predictions for the 3 classes
+    df['correct_pred_count'] = df['task2_active_intersection_count'] + df['task2_discontinued_intersection_count'] + (df['task2_neither_intersection_count'] if dataset_name != 'Internal Data' else 0)
 
-        # Update DataFrame with the calculated metrics
-        df.loc[index, 'conditional_accuracy'] = acc
-        df.loc[index, 'conditional_macro_f1'] = macro_f1
-        df.loc[index, 'conditional_macro_precision'] = macro_precision
-        df.loc[index, 'conditional_macro_recall'] = macro_recall
+    # Calculate the macro metrics
+    conditional_accuracy = df['correct_pred_count'].sum() / df['pred_count'].sum() if df['true_count'].sum() > 0 else 0   
+    conditional_macro_f1 = (active_f1 + discontinued_f1 + neither_f1) / (2 if dataset_name == 'Internal Data' else 3)
+    conditional_macro_precision = (active_precision + discontinued_precision + neither_precision) / (2 if dataset_name == 'Internal Data' else 3)
+    conditional_macro_recall = (active_recall + discontinued_recall + neither_recall) / (2 if dataset_name == 'Internal Data' else 3)
 
-    return df
+    return extraction_precision, extraction_recall, extraction_f1, conditional_accuracy, conditional_macro_f1, conditional_macro_precision, conditional_macro_recall
 
 # 5. Main function to tie everything together
 def run_pipeline(model_path, input_df, prompt_template, dataset_name, batch_size=16, max_token_output=80, use_sampling=False):
@@ -328,10 +303,10 @@ def run_pipeline(model_path, input_df, prompt_template, dataset_name, batch_size
     df_w_classifications = process_output(input_df, response_list, dataset_name)
 
     # Calculate row-level metrics
-    df_w_metrics = calculate_row_metrics(df_w_classifications, dataset_name)
+    extraction_precision, extraction_recall, extraction_f1, conditional_accuracy, conditional_macro_f1, conditional_macro_precision, conditional_macro_recall = calculate_metrics_by_dataset(df_w_classifications, dataset_name)
 
     # Return the final DataFrame with metrics
-    return df_w_metrics
+    return df_w_classifications, extraction_precision, extraction_recall, extraction_f1, conditional_accuracy, conditional_macro_f1, conditional_macro_precision, conditional_macro_recall
 
 # 6. Function to benchmark the model
 def benchmark_model(name_dataset, model_path, prompt_template, input_df, data_folder, result_df_path, use_sampling=False, batch_size=16, max_token_output=80):
@@ -361,29 +336,33 @@ def benchmark_model(name_dataset, model_path, prompt_template, input_df, data_fo
     """
     model_name = model_path.split('/')[-1]
     # Run the pipeline
-    df_w_row_metrics = run_pipeline(model_path=model_path, 
+    df_w_classifications, extraction_precision, \
+    extraction_recall, extraction_f1, conditional_accuracy, \
+    conditional_macro_f1, conditional_macro_precision, \
+        conditional_macro_recall = run_pipeline(model_path=model_path, 
                                     input_df=input_df, 
                                     prompt_template=prompt_template, 
                                     dataset_name=name_dataset,
                                     use_sampling=use_sampling,
                                     batch_size=batch_size, 
                                     max_token_output=max_token_output)
-    df_w_row_metrics.to_csv(data_folder+f'base_pred_data/{name_dataset}_{model_name}.csv', index=False)
+    
+    df_w_classifications.to_csv(data_folder+f'base_pred_data/{name_dataset}_{model_name}.csv', index=False)
 
     result_df = pd.read_csv(data_folder+'results.csv')
-    metrics_mean = df_w_row_metrics[['extraction_precision', 'extraction_recall', 'conditional_accuracy', 'conditional_macro_f1', 'conditional_macro_precision', 'conditional_macro_recall']].mean(axis=0)
 
     # Define your result row
     new_row = {
         'Dataset': name_dataset,
         'Model': model_name,
         'Prompt': prompt_template,
-        'extraction_precision': metrics_mean.get('extraction_precision', np.nan),
-        'extraction_recall': metrics_mean.get('extraction_recall', np.nan),
-        'conditional_accuracy': metrics_mean.get('conditional_accuracy', np.nan),
-        'conditional_macro_f1': metrics_mean.get('conditional_macro_f1', np.nan),
-        'conditional_macro_precision': metrics_mean.get('conditional_macro_precision', np.nan),
-        'conditional_macro_recall': metrics_mean.get('conditional_macro_recall', np.nan)
+        'extraction_precision': extraction_precision,
+        'extraction_recall': extraction_recall,
+        'extraction_f1': extraction_f1,
+        'conditional_accuracy': conditional_accuracy,
+        'conditional_macro_f1': conditional_macro_f1,
+        'conditional_macro_precision': conditional_macro_precision,
+        'conditional_macro_recall': conditional_macro_recall
     }
 
     result_df = result_df._append(new_row, ignore_index=True).round(3)
