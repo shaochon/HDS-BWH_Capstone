@@ -99,7 +99,7 @@ def generate_responses(input_df, batch_size, generator, prompt_template, max_tok
         for response in responses:
             for generated in response:
                 # Extract relevant part of the response and append to list
-                response_list.append(generated['generated_text'].split("\n\nOutput:")[1].split("END")[0])
+                response_list.append(generated['generated_text'].split("\n\nOutput:")[-1].strip())
     
     return response_list
 
