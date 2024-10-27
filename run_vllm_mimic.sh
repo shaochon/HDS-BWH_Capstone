@@ -1,7 +1,8 @@
 #!/bin/bash
 
 # Ensure that only the specified GPUs are available for the jobs
-export CUDA_VISIBLE_DEVICES=4,5,6,7
+export CUDA_VISIBLE_DEVICES=0,1,2,3
+export VLLM_WORKER_MULTIPROC_METHOD=spawn
 
 # Data folder path and result file path
 data_folder="/PHShome/cs1839/capstone_data/"
@@ -15,22 +16,21 @@ cot=true
 input_df="${data_folder}${test_df_name}"
 
 # List of models and their paths
-declare -A name_model_paths=(
-    ["Llama-3.1-70B-Instruct"]="/netapp3/raw_data3/share/llm_public_host/Llama-3.1-70B-Instruct"
-    ["Qwen2-72B-Instruct"]="/PHShome/jn180/llm_public_host/Qwen2-72B-Instruct"
-    ["Qwen2.5-32B-Instruct"]="/netapp3/raw_data3/share/llm_public_host/Qwen2.5-32B-Instruct"
-    ["Qwen2.5-72B-Instruct"]="/netapp3/raw_data3/share/llm_public_host/Qwen2.5-72B-Instruct"
-    ["meditron-70b"]="/PHShome/jn180/llm_public_host/meditron-70b"
-    ["Mistral-7B-Instruct-v0.3"]="/netapp3/raw_data3/share/llm_public_host/Mistral-7B-Instruct-v0.3"
-    ["Mistral-Nemo-Instruct-2407"]="/netapp3/raw_data3/share/llm_public_host/Mistral-Nemo-Instruct-2407"
-
+declare -A name_model_paths=( 
     ["Llama-3.1-8B"]="/netapp3/raw_data3/share/llm_public_host/Llama-3.1-8B"
     ["Llama-3.1-8B-Instruct"]="/netapp3/raw_data3/share/llm_public_host/Llama-3.1-8B-Instruct"
+    ["Llama-3.1-70B-Instruct"]="/netapp3/raw_data3/share/llm_public_host/Llama-3.1-70B-Instruct"
     ["Llama-3.2-1B-Instruct"]="/netapp3/raw_data3/share/llm_public_host/Llama-3.2-1B-Instruct"
     ["Llama-3.2-3B-Instruct"]="/netapp3/raw_data3/share/llm_public_host/Llama-3.2-3B-Instruct"
+    ["Qwen2-72B-Instruct"]="/PHShome/jn180/llm_public_host/Qwen2-72B-Instruct"
     ["Qwen2-7B-Instruct"]="/PHShome/jn180/llm_public_host/Qwen2-7B-Instruct"
     ["Qwen2.5-14B-Instruct"]="/netapp3/raw_data3/share/llm_public_host/Qwen2.5-14B-Instruct"
+    ["Qwen2.5-32B-Instruct"]="/netapp3/raw_data3/share/llm_public_host/Qwen2.5-32B-Instruct"
+    ["Qwen2.5-72B-Instruct"]="/netapp3/raw_data3/share/llm_public_host/Qwen2.5-72B-Instruct"
+    ["Mistral-7B-Instruct-v0.3"]="/netapp3/raw_data3/share/llm_public_host/Mistral-7B-Instruct-v0.3"
+    ["Mistral-Nemo-Instruct-2407"]="/netapp3/raw_data3/share/llm_public_host/Mistral-Nemo-Instruct-2407"
     ["meditron-7b"]="/PHShome/jn180/llm_public_host/meditron-7b"
+    ["meditron-70b"]="/PHShome/jn180/llm_public_host/meditron-70b"
 )
 
 # Define prompt template keys based on dataset
@@ -61,19 +61,13 @@ for model_name in "${!name_model_paths[@]}"; do
         --result_df_path "$results_df_path" \
         --one_shot "$one_shot" \
         --cot "$cot" \
-        --batch_size 200 \
-        --max_token_output 200 \
+        --batch_size 180
 
     # Clear the CUDA cache to free up GPU memory
     echo "Clearing GPU memory after running model: ${model_name}"
-    python -c "import torch; torch.cuda.empty_cache()"
 
     # Ensure garbage collection and add a short delay
-    sleep 2
-    python -c "import gc; gc.collect()"
-
-
+    sleep 1
 done
-
 
 echo "All jobs completed."
