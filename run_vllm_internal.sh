@@ -10,29 +10,30 @@ results_df_path="${data_folder}results.csv"
 test_df_name="PPV_snippet_medications.csv"  # Adjust this depending on your actual test file
 one_shot=false
 cot=true
+five_shot=false
 
 
 # Load the appropriate test dataframe
 input_df="${data_folder}${test_df_name}"
 
 # List of models and their paths
-declare -A name_model_paths=(
+declare -A name_model_paths=( 
     ["Llama-3.1-8B"]="/netapp3/raw_data3/share/llm_public_host/Llama-3.1-8B"
     ["Llama-3.1-8B-Instruct"]="/netapp3/raw_data3/share/llm_public_host/Llama-3.1-8B-Instruct"
     ["Llama-3.1-70B-Instruct"]="/netapp3/raw_data3/share/llm_public_host/Llama-3.1-70B-Instruct"
-    
     ["Llama-3.2-1B-Instruct"]="/netapp3/raw_data3/share/llm_public_host/Llama-3.2-1B-Instruct"
     ["Llama-3.2-3B-Instruct"]="/netapp3/raw_data3/share/llm_public_host/Llama-3.2-3B-Instruct"
+
+    ["MeLLaMA-13B"]="/netapp3/raw_data3/share/llm_public_host/test/physionet.org/files/me-llama/1.0.0/MeLLaMA-13B"
+    ["MeLLaMA-13B-chat"]="/netapp3/raw_data3/share/llm_public_host/test/physionet.org/files/me-llama/1.0.0/MeLLaMA-13B-chat"
 
     ["Qwen2-72B-Instruct"]="/PHShome/jn180/llm_public_host/Qwen2-72B-Instruct"
     ["Qwen2-7B-Instruct"]="/PHShome/jn180/llm_public_host/Qwen2-7B-Instruct"
     ["Qwen2.5-14B-Instruct"]="/netapp3/raw_data3/share/llm_public_host/Qwen2.5-14B-Instruct"
     ["Qwen2.5-32B-Instruct"]="/netapp3/raw_data3/share/llm_public_host/Qwen2.5-32B-Instruct"
     ["Qwen2.5-72B-Instruct"]="/netapp3/raw_data3/share/llm_public_host/Qwen2.5-72B-Instruct"
-    
     ["Mistral-7B-Instruct-v0.3"]="/netapp3/raw_data3/share/llm_public_host/Mistral-7B-Instruct-v0.3"
     ["Mistral-Nemo-Instruct-2407"]="/netapp3/raw_data3/share/llm_public_host/Mistral-Nemo-Instruct-2407"
-    
     ["meditron-7b"]="/PHShome/jn180/llm_public_host/meditron-7b"
     ["meditron-70b"]="/PHShome/jn180/llm_public_host/meditron-70b"
 )
@@ -50,7 +51,14 @@ elif [[ "$test_df_name" == "mimic_iv_snippets_list.csv" ]]; then
 fi
 
 # Iterate over each model and run them one after another
+# Extract the keys in the order of declaration
+ordered_model_names=()
 for model_name in "${!name_model_paths[@]}"; do
+    ordered_model_names+=("$model_name")
+done
+
+# Iterate over the ordered keys
+for model_name in "${ordered_model_names[@]}"; do
     model_path="${name_model_paths[$model_name]}"
 
     echo "Using prompt template key: ${prompt_template_key}"
@@ -65,18 +73,14 @@ for model_name in "${!name_model_paths[@]}"; do
         --result_df_path "$results_df_path" \
         --one_shot "$one_shot" \
         --cot "$cot" \
-        --batch_size 200
+        --five_shot "$five_shot" \
+        --batch_size 150
 
     # Clear the CUDA cache to free up GPU memory
     echo "Clearing GPU memory after running model: ${model_name}"
-    python -c "import torch; torch.cuda.empty_cache()"
 
     # Ensure garbage collection and add a short delay
-    sleep 2
-    python -c "import gc; gc.collect()"
-
-
+    sleep 1
 done
-
 
 echo "All jobs completed."
