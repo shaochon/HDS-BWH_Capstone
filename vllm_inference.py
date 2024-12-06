@@ -320,7 +320,7 @@ def calculate_classification_metrics(df, dataset_name):
     df['correct_pred_count'] = df['joint_active_intersection_count'] + df['joint_discontinued_intersection_count'] + (df['joint_neither_intersection_count'] if dataset_name != 'Internal Data' else 0)
 
     # Calculate the macro metrics
-    joint_accuracy = df['correct_pred_count'].sum() / df['pred_count'].sum() if df['true_count'].sum() > 0 else 0   
+    joint_accuracy = df['correct_pred_count'].sum() / df['pred_count'].sum() if df['pred_count'].sum() > 0 else 0   
     joint_macro_f1 = (active_f1 + discontinued_f1 + neither_f1) / (2 if dataset_name == 'Internal Data' else 3)
     joint_macro_precision = (active_precision + discontinued_precision + neither_precision) / (2 if dataset_name == 'Internal Data' else 3)
     joint_macro_recall = (active_recall + discontinued_recall + neither_recall) / (2 if dataset_name == 'Internal Data' else 3)
@@ -380,7 +380,7 @@ def run_llm_pipeline(llm_model, input_df, prompt_template, dataset_name, batch_s
     accuracy, macro_f1, macro_precision, macro_recall = calculate_classification_metrics(df_w_classifications_with_groundtruth, dataset_name)
 
     # append the active_medications_pred, discontinued_medications_pred, neither_medications_pred to the df_w_classifications with extension of _with_groundtruth
-    df_w_classifications_with_groundtruth = df_w_classifications_with_groundtruth[['model_response', 'active_medications_pred', 'discontinued_medications_pred', 'neither_medications_pred']] if dataset_name != "Internal Data" else df_w_classifications_with_groundtruth[['model_response', 'active_medications_pred', 'discontinued_medications']]
+    df_w_classifications_with_groundtruth = df_w_classifications_with_groundtruth[['model_response', 'active_medications_pred', 'discontinued_medications_pred', 'neither_medications_pred']] if dataset_name != "Internal Data" else df_w_classifications_with_groundtruth[['model_response', 'active_medications_pred', 'discontinued_medications_pred']]
     df_w_classifications_with_groundtruth.columns = [f'{col}_with_groundtruth' for col in df_w_classifications_with_groundtruth.columns]
     df_w_classifications = pd.concat([df_w_classifications, df_w_classifications_with_groundtruth], axis=1)
 
@@ -397,18 +397,18 @@ def clear_cuda_memory_and_terminate(generator=None):
     gc.collect()
 
 
-def benchmark_llm_model(dataset_name, model_path, prompt_templates, input_df, data_folder, result_df_path, batch_size=16, max_token_output=80, use_sampling=False, one_shot=False, cot=False, five_shot=False):
+def benchmark_llm_model(dataset_name, model_path, prompt_templates_with_keys, input_df, data_folder, result_df_path, batch_size=16, use_sampling=False):
     """
     Function to run the entire LLMEngine pipeline and compute average row-wise metrics for a specific model and dataset.
-
+    
     Parameters:
     ----------
     dataset_name : str
         The name of the dataset being processed (e.g., "Internal Data" or "MIT").
     model_path : str
         The path of the model to be used.
-    prompt_templates : list of str
-        List of templates for constructing the prompts.
+    prompt_templates_with_keys : list of tuples
+        List of tuples, each containing a template key and the corresponding prompt template.
     input_df : pd.DataFrame
         Data to run inference on.
     data_folder : str
@@ -417,13 +417,12 @@ def benchmark_llm_model(dataset_name, model_path, prompt_templates, input_df, da
         Path to the CSV file where results will be stored.
     batch_size : int
         Number of examples per batch.
-    max_token_output : int
-        Maximum number of tokens to generate.
-    one_shot : bool
-        Whether the current run is a one-shot test.
+    use_sampling : bool
+        Whether to use sampling during inference.
     """
     model_name = model_path.split('/')[-1]
-    # check if input_df.active_medications[0] is a list, if not, apply eval and lower to active_medications, discontinued_medications, neither_medications
+    
+    # Check if input_df.active_medications[0] is a list, if not, apply eval and lower to medications
     if not isinstance(input_df.active_medications[0], list):
         input_df.loc[:, 'active_medications'] = input_df['active_medications'].apply(lambda x: literal_eval(x)).apply(lambda x: [med.lower() for med in x])
         input_df.loc[:, 'discontinued_medications'] = input_df['discontinued_medications'].apply(lambda x: literal_eval(x)).apply(lambda x: [med.lower() for med in x])
@@ -433,50 +432,36 @@ def benchmark_llm_model(dataset_name, model_path, prompt_templates, input_df, da
     col_list = ['active_medications', 'discontinued_medications', 'neither_medications'] if dataset_name != "Internal Data" else ['active_medications', 'discontinued_medications']
     input_df['true_set'] = input_df[col_list].apply(lambda x: set([med for meds in x for med in meds]), axis=1)
     
-    # Initialize the model with LLMEngine
+    # Initialize the model with LLMEngine (only once)
     llm_engine = initialize_llm_model(model_path)
     
     # Iterate over each prompt template
-    for sim in range(1, 6):
-        for i, prompt_template in enumerate(prompt_templates):
-            print(f"Running with prompt template {i+1}/{len(prompt_templates)}")
-            
-            # Run the LLMEngine pipeline with dynamic GPU count
-            df_w_classifications, extraction_precision, \
-            extraction_recall, extraction_f1, joint_accuracy, \
-            joint_macro_f1, joint_macro_precision, \
-            joint_macro_recall, \
-            accuracy, macro_f1, macro_precision, macro_recall = run_llm_pipeline(
+    for sim in range(5):
+        for i, (prompt_key, prompt_template) in enumerate(prompt_templates_with_keys):
+            print(f"Running with prompt template {i+1}/{len(prompt_templates_with_keys)}")
+
+            # Run the LLMEngine pipeline
+            df_w_classifications, extraction_precision, extraction_recall, extraction_f1, joint_accuracy, \
+            joint_macro_f1, joint_macro_precision, joint_macro_recall, accuracy, macro_f1, macro_precision, \
+            macro_recall = run_llm_pipeline(
                 llm_model=llm_engine, 
                 input_df=input_df, 
                 prompt_template=prompt_template, 
                 dataset_name=dataset_name,
                 batch_size=batch_size, 
-                max_token_output=max_token_output,
+                max_token_output=200 if "Let's think step by step" not in prompt_template else 700,
                 use_sampling=use_sampling
             )
 
             # Save the row metrics DataFrame to a CSV
-            if cot and one_shot:
-                output_filename = f'{dataset_name}_{model_name}_cot_1_shot_{i+1}_cot_sim_{sim}.csv'
-            elif cot and five_shot:
-                output_filename = f'{dataset_name}_{model_name}_5_shot_cot_sim_{sim}.csv'
-            elif cot:
-                output_filename = f'{dataset_name}_{model_name}_cot_sim_{sim}.csv'
-            elif one_shot:
-                output_filename = f'{dataset_name}_{model_name}_1_shot_{i+1}_sim_{sim}.csv'
-            elif five_shot:
-                output_filename = f'{dataset_name}_{model_name}_5_shots_sim_{sim}.csv'
-            else:
-                output_filename = f'{dataset_name}_{model_name}_sim_{sim}.csv'
-
+            output_filename = f'{dataset_name}_{model_name}_sim_{sim}_{prompt_key}.csv'
             df_w_classifications.to_csv(data_folder + f'base_pred_data/{output_filename}', index=False)
 
             # Read the results CSV
             result_df = pd.read_csv(result_df_path)
 
             # Define your result row
-            new_row = {
+            new_row = pd.DataFrame([{
                 'Dataset': dataset_name,
                 'Model': model_name,
                 'Prompt': prompt_template,
@@ -495,13 +480,13 @@ def benchmark_llm_model(dataset_name, model_path, prompt_templates, input_df, da
                 'joint_macro_f1': joint_macro_f1,
                 'joint_macro_precision': joint_macro_precision,
                 'joint_macro_recall': joint_macro_recall,
-            }
+            }])
 
-            # Append the new row to the results DataFrame and save
-            result_df = result_df._append(new_row, ignore_index=True).round(3)
+            # Concatenate the new row to the results DataFrame and save
+            result_df = pd.concat([result_df, new_row], ignore_index=True).round(3)
+            
             result_df.to_csv(result_df_path, index=False)
             print(f"Simulation {sim} results for {model_name} on {dataset_name} with prompt {i+1} saved successfully.")
-
 
 # Function to parse command-line arguments
 def parse_arguments():
@@ -515,55 +500,49 @@ def parse_arguments():
     parser.add_argument('--data_folder', type=str, required=True, help="Path to the data folder containing test data and saving results.")
     parser.add_argument('--result_df_path', type=str, required=True, help="Path to the CSV file where results will be stored.")
     parser.add_argument('--batch_size', type=int, default=16, help="Batch size for inference.")
-    parser.add_argument('--one_shot', type=str, required=True, help="Whether to perform one-shot inference.")
-    parser.add_argument('--cot', type=str, required=True, help="Whether to perform chain-of-thoughts inference.")
-    parser.add_argument('--five_shot', type=str, required=True, help="Whether to perform five-shot inference.")
     
     return parser.parse_args()
 
+
+def load_prompt_templates(prompt_file_path, template_key_prefix):
+    """Load prompt templates from a JSON file, filtering by prefix."""
+    with open(prompt_file_path, 'r') as file:
+        prompt_templates_json = json.load(file)
+    
+    # Filter keys that start with the specified prefix
+    prompt_templates_with_keys = [
+        (key, prompt_templates_json[key])
+        for key in prompt_templates_json
+        if key.startswith(template_key_prefix)
+    ]
+    
+    if not prompt_templates_with_keys:
+        raise KeyError(f"No templates found for the key prefix: {template_key_prefix}")
+    
+    print(f'Loaded {len(prompt_templates_with_keys)} prompt templates for prefix "{template_key_prefix}"')
+    return prompt_templates_with_keys
+
 if __name__ == "__main__":
     # Parse the arguments from the command line
+
     args = parse_arguments()
 
     # Load the test dataframe
     test_df = pd.read_csv(os.path.join(args.data_folder, args.test_df_name))
 
-    try:
-        with open('prompts.json', 'r') as file:
-            prompt_templates_json = json.load(file)
-
-        prompt_template_keys = [args.prompt_template_key]
-        if args.one_shot == 'true' and args.cot == 'true':
-            prompt_template_keys = [f"{args.prompt_template_key}_1_shot_{i+1}_CoT" for i in range(5)]
-        elif args.five_shot == 'true' and args.cot == 'true':
-            prompt_template_keys = [f"{args.prompt_template_key}_5_shots_CoT"]
-        elif args.cot == 'true':
-            prompt_template_keys = [f"{args.prompt_template_key}_CoT"]
-        elif args.one_shot == 'true':
-            prompt_template_keys = [f"{args.prompt_template_key}_1_shot_{i+1}" for i in range(5)]
-        elif args.five_shot == 'true':
-            prompt_template_keys = [f"{args.prompt_template_key}_5_shots"]
-
-        prompt_templates = [prompt_templates_json[key] for key in prompt_template_keys]
-        print(f'Loaded prompt key {prompt_template_keys} for inference.')
-    except KeyError as e:
-        print(f"Key error occurred: {e}")
-        sys.exit(1)
+    # Load the prompt templates based on the provided key prefix
+    prompt_templates_with_keys = load_prompt_templates('prompts.json', args.prompt_template_key)
 
     # Run the benchmark using your defined function
     benchmark_llm_model(
         dataset_name=args.dataset_name,
         model_path=args.model_path,
-        prompt_templates=prompt_templates,
+        prompt_templates_with_keys=prompt_templates_with_keys,
         input_df=test_df,
         data_folder=args.data_folder,
         result_df_path=args.result_df_path,
         batch_size=args.batch_size,
-        max_token_output=80 if args.cot != 'true' else 300,
-        use_sampling=True,
-        one_shot=True if args.one_shot == 'true' else False,
-        cot=True if args.cot == 'true' else False,
-        five_shot=True if args.five_shot == 'true' else False
+        use_sampling=True
     )
 
     torch.cuda.empty_cache()
