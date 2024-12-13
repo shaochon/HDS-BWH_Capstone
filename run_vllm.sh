@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Ensure that only the specified GPUs are available for the jobs
-export CUDA_VISIBLE_DEVICES=4,5,6,7
+export CUDA_VISIBLE_DEVICES=0,1,2,3
 export VLLM_WORKER_MULTIPROC_METHOD=spawn
 
 # Data folder path and result file path
@@ -13,22 +13,23 @@ test_files=("medication_status_test.csv" "PPV_snippet_medications.csv" "mimic_iv
 
 # List of models and their paths
 declare -A name_model_paths=( 
-    ["Llama-3.1-8B"]="/netapp3/raw_data3/share/llm_public_host/Llama-3.1-8B"
-    ["Llama-3.1-8B-Instruct"]="/netapp3/raw_data3/share/llm_public_host/Llama-3.1-8B-Instruct"
-    ["Llama-3.1-70B-Instruct"]="/netapp3/raw_data3/share/llm_public_host/Llama-3.1-70B-Instruct"
-    # ["Llama-3.2-1B-Instruct"]="/netapp3/raw_data3/share/llm_public_host/Llama-3.2-1B-Instruct"
-    # ["Llama-3.2-3B-Instruct"]="/netapp3/raw_data3/share/llm_public_host/Llama-3.2-3B-Instruct"
-    ["MeLLaMA-13B"]="/netapp3/raw_data3/share/llm_public_host/MeLLaMA-13B"
-    ["MeLLaMA-13B-chat"]="/netapp3/raw_data3/share/llm_public_host/MeLLaMA-13B-chat"
-    ["MeLLaMA-70B-chat"]="/netapp3/raw_data3/share/llm_public_host/MeLLaMA-70B-chat"
-    # ["Qwen2-72B-Instruct"]="/PHShome/jn180/llm_public_host/Qwen2-72B-Instruct"
-    ["Qwen2.5-14B-Instruct"]="/netapp3/raw_data3/share/llm_public_host/Qwen2.5-14B-Instruct"
-    ["Qwen2.5-32B-Instruct"]="/netapp3/raw_data3/share/llm_public_host/Qwen2.5-32B-Instruct"
+    # ["Llama-3.1-8B"]="/netapp3/raw_data3/share/llm_public_host/Llama-3.1-8B"
+    # ["Llama-3.1-8B-Instruct"]="/netapp3/raw_data3/share/llm_public_host/Llama-3.1-8B-Instruct"
+    # ["Llama-3.1-70B-Instruct"]="/netapp3/raw_data3/share/llm_public_host/Llama-3.1-70B-Instruct"
+    # ["Llama-3.3-70B-Instruct"]="/netapp3/raw_data3/share/llm_public_host/Llama-3.3-70B-Instruct"
+    # # ["Llama-3.2-1B-Instruct"]="/netapp3/raw_data3/share/llm_public_host/Llama-3.2-1B-Instruct"
+    # # ["Llama-3.2-3B-Instruct"]="/netapp3/raw_data3/share/llm_public_host/Llama-3.2-3B-Instruct"
+    # ["MeLLaMA-13B"]="/netapp3/raw_data3/share/llm_public_host/MeLLaMA-13B"
+    # ["MeLLaMA-13B-chat"]="/netapp3/raw_data3/share/llm_public_host/MeLLaMA-13B-chat"
+    # ["MeLLaMA-70B-chat"]="/netapp3/raw_data3/share/llm_public_host/MeLLaMA-70B-chat"
+    # # ["Qwen2-72B-Instruct"]="/PHShome/jn180/llm_public_host/Qwen2-72B-Instruct"
+    # ["Qwen2.5-14B-Instruct"]="/netapp3/raw_data3/share/llm_public_host/Qwen2.5-14B-Instruct"
+    # ["Qwen2.5-32B-Instruct"]="/netapp3/raw_data3/share/llm_public_host/Qwen2.5-32B-Instruct"
     ["Qwen2.5-72B-Instruct"]="/netapp3/raw_data3/share/llm_public_host/Qwen2.5-72B-Instruct"
-    ["Mistral-7B-Instruct-v0.3"]="/netapp3/raw_data3/share/llm_public_host/Mistral-7B-Instruct-v0.3"
-    ["Mistral-Nemo-Instruct-2407"]="/netapp3/raw_data3/share/llm_public_host/Mistral-Nemo-Instruct-2407"
-    ["meditron-7b"]="/netapp3/raw_data3/share/llm_public_host/meditron-7b"
-    ["meditron-70b"]="/netapp3/raw_data3/share/llm_public_host/meditron-70b"
+    # ["Mistral-7B-Instruct-v0.3"]="/netapp3/raw_data3/share/llm_public_host/Mistral-7B-Instruct-v0.3"
+    # ["Mistral-Nemo-Instruct-2407"]="/netapp3/raw_data3/share/llm_public_host/Mistral-Nemo-Instruct-2407"
+    # ["meditron-7b"]="/netapp3/raw_data3/share/llm_public_host/meditron-7b"
+    # ["meditron-70b"]="/netapp3/raw_data3/share/llm_public_host/meditron-70b"
 )
 
 # Extract the keys in the order of declaration

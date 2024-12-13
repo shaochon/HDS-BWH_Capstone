@@ -27,7 +27,7 @@ def get_visible_gpus():
     return num_gpus
 
 
-def initialize_llm_model(model_path, use_fp16=True, gpu_memory_utilization=0.8):
+def initialize_llm_model(model_path, use_fp16=True, gpu_memory_utilization=0.9):
     """
     Initializes the model for text generation using LLM on dynamically detected GPUs with dynamically set KV cache.
 
@@ -532,6 +532,9 @@ if __name__ == "__main__":
 
     # Load the prompt templates based on the provided key prefix
     prompt_templates_with_keys = load_prompt_templates('prompts.json', args.prompt_template_key)
+
+    # filter prompt_templates_with_keys to only include the key doesn't contain 1_shot
+    prompt_templates_with_keys = [(key, template) for key, template in prompt_templates_with_keys if '1_shot' not in key]
 
     # Run the benchmark using your defined function
     benchmark_llm_model(
